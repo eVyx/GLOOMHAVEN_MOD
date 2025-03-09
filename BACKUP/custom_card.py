@@ -12,24 +12,15 @@ ENNEMIS_DIR = os.path.join(RESSOURCES_DIR, "ENNEMIS")
 
 PAPYRUS_ELITE_TEXTURE_PATH = os.path.join(TEXTURES_DIR, "papyrus_elite.png")
 PAPYRUS_NORMAL_TEXTURE_PATH = os.path.join(TEXTURES_DIR, "papyrus_normal.png")
-ENEMY_IMAGE_PATH = os.path.join(ENNEMIS_DIR, "pillard_vermling.png")
 ICON_BOOTS_PATH = os.path.join(ICONS_DIR, "BOOTS.png")
 ICON_ATTACK_PATH = os.path.join(ICONS_DIR, "ATTACK.svg")
 ICON_HP_PATH = os.path.join(ICONS_DIR, "HP.png")
 
-SCALE_RATIO = 0.8  # Réduction à 80%
-CARD_WIDTH, CARD_HEIGHT = int(400 * SCALE_RATIO), int(560 * SCALE_RATIO)
+SCALE_FACTOR = 0.8  
 
-# 📌 Définition de l'ennemi
-enemy_data = {
-    "name": "Pillard Vermling",
-    "id": 1,
-    "elite": 1,  # Modifier ici pour tester (0 = normal, 1 = élite)
-    "mouvement": 2,
-    "attaque": 4,
-    "hp": 6,
-    "max_hp": 6
-}
+# 📏 Taille ajustée de la carte
+CARD_WIDTH = int(400 * SCALE_FACTOR)
+CARD_HEIGHT = int(560 * SCALE_FACTOR)
 
 def load_svg_as_png(svg_path, size=(32, 32)):
     """Charge une icône SVG et la convertit en PNG."""
@@ -39,18 +30,23 @@ def load_svg_as_png(svg_path, size=(32, 32)):
     return ImageTk.PhotoImage(img)
 
 class CarteEnnemi(tk.Frame):
-    def __init__(self, parent, enemy_data):
-        """Création d'une carte d'ennemi"""
+    def __init__(self, parent, enemy_id):
+        """Création d'une carte ennemi en récupérant les stats depuis la base de données"""
         super().__init__(parent)
 
-        if not enemy_data or "nom" not in enemy_data:
-            print("❌ ERREUR: `enemy_data` ne contient pas 'nom' !", enemy_data)
-            return
+        from ennemy_mod import get_enemy_data  
+        self.enemy = get_enemy_data(enemy_id)
 
-        self.enemy = enemy_data
+        if not self.enemy:
+            raise ValueError(f"Ennemi ID {enemy_id} introuvable dans la base de données.")
+
         self.parent = parent
-        
-        self.canvas = tk.Canvas(self, width=CARD_WIDTH, height=CARD_HEIGHT, bg="black", highlightthickness=0)
+        self.scale = SCALE_FACTOR
+
+        self.width = int(CARD_WIDTH)
+        self.height = int(CARD_HEIGHT)
+
+        self.canvas = tk.Canvas(self, width=self.width, height=self.height, bg="black", highlightthickness=0)
         self.canvas.pack()
 
         self.draw_background()
@@ -63,46 +59,62 @@ class CarteEnnemi(tk.Frame):
         """Affiche le fond de la carte en fonction du type (élite ou normal)."""
         bg_image_path = PAPYRUS_ELITE_TEXTURE_PATH if self.enemy["elite"] else PAPYRUS_NORMAL_TEXTURE_PATH
         papyrus_img = Image.open(bg_image_path).resize((CARD_WIDTH, CARD_HEIGHT), Image.LANCZOS)
+
+        # 📌 Stocker l’image dans `self` pour éviter sa suppression
         self.bg_tk = ImageTk.PhotoImage(papyrus_img)
+        
+        # 📌 Utiliser `self.canvas.create_image` avec une référence persistante
         self.canvas.create_image(CARD_WIDTH * 0.5, CARD_HEIGHT * 0.5, anchor="center", image=self.bg_tk)
 
+
     def draw_title(self):
-        """Affiche le titre et l'ID de l'ennemi."""
-        x, y = CARD_WIDTH * 0.125, CARD_HEIGHT * 0.053
-        font_size = int(CARD_WIDTH * 0.06)
+        """Affiche le titre avec une taille ajustée dynamiquement"""
+        x = self.width * 0.5  
+        y = self.height * 0.07  
+
+        base_font_size = 24  
+        max_font_size = 28  
+        min_font_size = 14  
+
+        text_length_factor = max(1, len(self.enemy["nom"]) / 12)  
+        font_size = max(min_font_size, int(max_font_size / text_length_factor))  
+
         font = ("Dragon Hunter", font_size)
         text_color = "#FFD700" if self.enemy["elite"] else "white"
 
-        # ✅ Contour noir simulé
-        offsets = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-        for dx, dy in offsets:
-            self.canvas.create_text(x + dx, y + dy, anchor="nw", text=self.enemy["nom"], font=font, fill="black")
+        outline_offset = max(int(2 * self.scale), 1)
+        for dx, dy in [(-outline_offset, 0), (outline_offset, 0), (0, -outline_offset), (0, outline_offset)]:
+            self.canvas.create_text(x + dx, y + dy, anchor="center", text=self.enemy["nom"], font=font, fill="black")
 
-        self.canvas.create_text(x, y, anchor="nw", text=self.enemy["nom"], font=font, fill=text_color)
-
-        # ✅ ID de l'ennemi en noir
-        self.canvas.create_text(CARD_WIDTH * 0.445, CARD_HEIGHT * 0.107, anchor="nw",
-                                text=f"#{self.enemy['id']}", font=("Maitree SemiBold", int(CARD_WIDTH * 0.05)), fill="black")
+        self.canvas.create_text(x, y, anchor="center", text=self.enemy["nom"], font=font, fill=text_color)
 
     def draw_stats(self):
         """Affiche les icônes et valeurs des stats."""
-        self.icon_boots_tk = ImageTk.PhotoImage(Image.open(ICON_BOOTS_PATH).resize((32, 32), Image.LANCZOS))
-        self.icon_attack_tk = load_svg_as_png(ICON_ATTACK_PATH, size=(32, 32))
+        icon_size = int(32 * SCALE_FACTOR)  
+        self.icon_boots_tk = ImageTk.PhotoImage(Image.open(ICON_BOOTS_PATH).resize((icon_size, icon_size), Image.LANCZOS))
+        self.icon_attack_tk = load_svg_as_png(ICON_ATTACK_PATH, size=(icon_size, icon_size))
 
         self.canvas.create_image(CARD_WIDTH * 0.30, CARD_HEIGHT * 0.198, anchor="nw", image=self.icon_boots_tk)
         self.canvas.create_image(CARD_WIDTH * 0.54, CARD_HEIGHT * 0.198, anchor="nw", image=self.icon_attack_tk)
 
-        self.canvas.create_text(CARD_WIDTH * 0.425, CARD_HEIGHT * 0.187, anchor="nw",
-                                text=str(self.enemy["mouvement"]), font=("Maitree SemiBold", 20), fill="black")
-        self.canvas.create_text(CARD_WIDTH * 0.652, CARD_HEIGHT * 0.187, anchor="nw",
-                                text=str(self.enemy["attaque"]), font=("Maitree SemiBold", 20), fill="black")
-
     def draw_enemy(self):
         """Affiche l'image de l'ennemi."""
-        enemy_img = Image.open(self.enemy["image"]).resize((280, 310), Image.LANCZOS)
+        enemy_img_path = os.path.join(ENNEMIS_DIR, self.enemy["image"])
+        enemy_img = Image.open(enemy_img_path).resize((int(280 * SCALE_FACTOR), int(310 * SCALE_FACTOR)), Image.LANCZOS)
         self.enemy_img_tk = ImageTk.PhotoImage(enemy_img)
         self.canvas.create_image(CARD_WIDTH * 0.5, CARD_HEIGHT * 0.57, anchor="center", image=self.enemy_img_tk)
-    
+
+    def draw_hp_bar(self):
+        """Affiche la barre de vie."""
+        bar_width = self.width * 0.64
+        bar_height = self.height * 0.06
+
+        bar_x = self.width * 0.18
+        bar_y = self.height * 0.875
+
+        self.create_rounded_rectangle(bar_x, bar_y, bar_x + bar_width, bar_y + bar_height,
+                                      radius=max(6, int(8 * self.scale)), outline="black", width=int(2 * self.scale), fill="#18A86B")
+
     def create_rounded_rectangle(self, x1, y1, x2, y2, radius=12, **kwargs):
         """Dessine un rectangle avec des coins arrondis."""
         points = [
@@ -114,75 +126,51 @@ class CarteEnnemi(tk.Frame):
         ]
         return self.canvas.create_polygon(points, smooth=True, **kwargs)
 
-    def draw_hp_bar(self):
-        """Affiche la barre de vie avec coins arrondis et icône PV bien positionnée."""
+class CartePreview(CarteEnnemi):
+    def __init__(self, parent, enemy_id):
+        """Création d'une carte de prévisualisation"""
+        super().__init__(parent, enemy_id)
+        self.scale = SCALE_FACTOR * 0.65  
+        self.width = int(CARD_WIDTH * 0.65)
+        self.height = int(CARD_HEIGHT * 0.65)
         
-        # 🎨 Dessiner la barre de vie
-        self.create_rounded_rectangle(CARD_WIDTH * 0.18, CARD_HEIGHT * 0.88,
-                                    CARD_WIDTH * 0.82, CARD_HEIGHT * 0.94,
-                                    radius=10, outline="black", width=2, fill="#18A86B")
+    def draw_background_preview(self):
+        """Affiche le fond de la carte en fonction du type (élite ou normal)."""
+        bg_image_path = PAPYRUS_ELITE_TEXTURE_PATH if self.enemy["elite"] else PAPYRUS_NORMAL_TEXTURE_PATH
+        papyrus_img = Image.open(bg_image_path).resize((CARD_WIDTH, CARD_HEIGHT), Image.LANCZOS)
 
-        # ❤️ Charger et positionner l’icône HP dans la barre de vie
-        self.icon_hp_tk = ImageTk.PhotoImage(Image.open(ICON_HP_PATH).resize((24, 24), Image.LANCZOS))
-        self.canvas.create_image(CARD_WIDTH * 0.40, CARD_HEIGHT * 0.89, anchor="nw", image=self.icon_hp_tk)
+        # 📌 Stocker l’image dans `self` pour éviter sa suppression
+        self.bg_tk = ImageTk.PhotoImage(papyrus_img)
+        
+        # 📌 Utiliser `self.canvas.create_image` avec une référence persistante
+        self.canvas.create_image(CARD_WIDTH * 0.5, CARD_HEIGHT * 0.5, anchor="center", image=self.bg_tk)
 
-        # 🔢 Affichage des PV sous forme `actuels/max`
-        self.canvas.create_text(CARD_WIDTH * 0.48, CARD_HEIGHT * 0.875, anchor="nw",
-                                text=f"{self.enemy['pv']}/{self.enemy['pv_max']}",
-                                font=("Maitree SemiBold", 18), fill="black")
+    def draw_title_preview(self):
+        """Affiche le titre ajusté à la preview"""
+        x = self.width * 0.5  
+        y = self.height * 0.07  
 
-   
-    
-class CartePreview(tk.Frame):
-    def __init__(self, parent, enemy_nom, enemy_pv, enemy_elite, mouvement, attaque):
-        """Création d'une carte de prévisualisation réduite"""
-        super().__init__(parent)
-        self.enemy_nom = enemy_nom
-        self.enemy_pv = enemy_pv
-        self.enemy_elite = enemy_elite
-        self.mouvement = mouvement
-        self.attaque = attaque
+        font_size = max(int(24 * self.scale), 10)  
+        font = ("Dragon Hunter", font_size)
+        text_color = "#FFD700" if self.enemy["elite"] else "white"
 
-        self.canvas = tk.Canvas(self, width=int(CARD_WIDTH / 1.3), height=int(CARD_HEIGHT / 1.3), bg="black", highlightthickness=0)
-        self.canvas.pack()
+        outline_offset = max(int(2 * self.scale), 1)
+        for dx, dy in [(-outline_offset, 0), (outline_offset, 0), (0, -outline_offset), (0, outline_offset)]:
+            self.canvas.create_text(x + dx, y + dy, anchor="center", text=self.enemy["nom"], font=font, fill="black")
 
-        self.draw_preview()
-    
-    def draw_preview(self):
-        """Affiche une carte réduite de l'ennemi sans la barre de vie."""
-        text_color = "#FFD700" if self.enemy_elite else "white"  
+        self.canvas.create_text(x, y, anchor="center", text=self.enemy["nom"], font=font, fill=text_color)
 
-        self.canvas.create_text(80, 30, text=self.enemy_nom.upper(), font=("Dragon Hunter", 12), fill=text_color)
+    def draw_stats_preview(self):
+        """Affiche les stats de la preview"""
+        icon_size = int(60 * self.scale)  
+        label_size = int(36 * self.scale)  
 
-        # Icônes
-        self.icon_boots_tk = ImageTk.PhotoImage(Image.open(ICON_BOOTS_PATH).resize((24, 24), Image.LANCZOS))
-        self.icon_attack_tk = load_svg_as_png(ICON_ATTACK_PATH, size=(24, 24))
-        self.icon_hp_tk = ImageTk.PhotoImage(Image.open(ICON_HP_PATH).resize((20, 20), Image.LANCZOS))
+        self.icon_boots_tk = ImageTk.PhotoImage(Image.open(ICON_BOOTS_PATH).resize((icon_size, icon_size), Image.LANCZOS))
+        self.icon_attack_tk = load_svg_as_png(ICON_ATTACK_PATH, size=(icon_size, icon_size))
 
-        self.canvas.create_image(60, 80, anchor="nw", image=self.icon_boots_tk)
-        self.canvas.create_text(90, 80, text=str(self.mouvement), font=("Maitree SemiBold", 12), fill="black")
-        self.canvas.create_image(140, 80, anchor="nw", image=self.icon_attack_tk)
-        self.canvas.create_text(170, 80, text=str(self.attaque), font=("Maitree SemiBold", 12), fill="black")
-        self.canvas.create_image(220, 80, anchor="nw", image=self.icon_hp_tk)
-        self.canvas.create_text(250, 80, text=str(self.enemy_pv), font=("Maitree SemiBold", 12), fill="black")
+        start_x = self.width * 0.2
+        spacing_x = self.width * 0.3  
+        y_position = self.height * 0.20  
 
-
-# 🏁 **Lancement de l'application**
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.title("Test Agencement Carte")
-
-    enemy_data = {
-        "nom": "Pillard Vermling",
-        "id": 1,
-        "elite": 1,
-        "mouvement": 2,
-        "attaque": 4,
-        "pv": 6,
-        "pv_max": 6,
-        "image": os.path.join(ENNEMIS_DIR, "pillard_vermling.png")
-    }
-
-    app = CarteEnnemi(root, enemy_data)
-    app.pack()
-    root.mainloop()
+        self.canvas.create_image(start_x, y_position, anchor="center", image=self.icon_boots_tk)
+        self.canvas.create_image(start_x + spacing_x, y_position, anchor="center", image=self.icon_attack_tk)
