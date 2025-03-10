@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 from PIL import Image, ImageTk
 import cairosvg
 import os
@@ -16,6 +17,9 @@ PAPYRUS_NORMAL_TEXTURE_PATH = os.path.join(TEXTURES_DIR, "papyrus_normal.png")
 ICON_BOOTS_PATH = os.path.join(ICONS_DIR, "BOOTS.png")
 ICON_ATTACK_PATH = os.path.join(ICONS_DIR, "ATTACK.svg")
 ICON_HP_PATH = os.path.join(ICONS_DIR, "HP.png")
+HP_DOWN_PATH = os.path.join(ICONS_DIR, "HP_DOWN.svg")
+HP_UP_PATH = os.path.join(ICONS_DIR, "HP_UP.svg")
+SKULL_ICON_PATH = os.path.join(ICONS_DIR, "SKULL.png")
 
 SCALE_FACTOR = 0.8  # Réduction à 80%
 CARD_WIDTH, CARD_HEIGHT = int(400 * SCALE_FACTOR), int(560 * SCALE_FACTOR)
@@ -32,17 +36,51 @@ class CarteEnnemi(tk.Frame):
         super().__init__(parent)
         self.enemy = self.get_enemy_combat_data(enemy_id)
         if not self.enemy:
-            raise ValueError(f"Ennemi ID {enemy_id} introuvable dans `ennemis_combat`.")
+            raise ValueError(f"Ennemi ID {enemy_id} introuvable dans ennemis_combat.")
 
         self.width, self.height = CARD_WIDTH, CARD_HEIGHT
-        self.canvas = tk.Canvas(self, width=self.width, height=self.height, bg="black", highlightthickness=0)
-        self.canvas.grid(row=0, column=0, padx=10, pady=10)
 
+        # **🔹 Création du conteneur principal**
+        self.container = tk.Frame(self)
+        self.container.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+        # **🎴 Canvas de la carte**
+        self.canvas = tk.Canvas(self.container, width=self.width, height=self.height, bg="black", highlightthickness=0)
+        self.canvas.grid(row=0, column=0, padx=10, pady=10)
+        
+        self.icon_skull_tk = ImageTk.PhotoImage(Image.open(SKULL_ICON_PATH).resize((int(18 * SCALE_FACTOR), int(18 * SCALE_FACTOR)), Image.LANCZOS))
+
+        # Chargement de l'icône PV AVANT d'appeler draw_hp_bar()
+        self.icon_hp_tk = ImageTk.PhotoImage(Image.open(ICON_HP_PATH).resize((int(18 * SCALE_FACTOR), int(18 * SCALE_FACTOR)), Image.LANCZOS))
+
+        # **🔹 Ajout des composants**
         self.draw_background()
         self.draw_title()
         self.draw_stats()
         self.draw_enemy()
         self.draw_hp_bar()
+    
+            # 📌 **Ajout de `button_container` dans `CarteEnnemi`**
+        self.button_container = tk.Frame(self)
+        self.button_container.grid(row=1, column=0, pady=(5, 0))  # 🔹 **Réduction de l’espace sous la carte**
+
+        # 📌 **Taille des boutons améliorée**
+        button_size = (150, 150)  # ✅ **Agrandissement uniforme des icônes**
+
+        # 📌 **Chargement des icônes (évite la duplication)**
+        self.hp_down_tk = load_svg_as_png(HP_DOWN_PATH, size=button_size)
+        self.hp_up_tk = load_svg_as_png(HP_UP_PATH, size=button_size)
+
+        # **➖ Bouton "Moins"**
+        self.hp_down = tk.Label(self.button_container, image=self.hp_down_tk, cursor="hand2")
+        self.hp_down.grid(row=0, column=0, padx=10, sticky="e")
+        self.hp_down.bind("<Button-1>", lambda event: self.modify_hp(-1))  # 🔹 **Décrémentation PV**
+
+        # **➕ Bouton "Plus"**
+        self.hp_up = tk.Label(self.button_container, image=self.hp_up_tk, cursor="hand2")
+        self.hp_up.grid(row=0, column=1, padx=10, sticky="w")
+        self.hp_up.bind("<Button-1>", lambda event: self.modify_hp(+1))  # 🔹 **Incrémentation PV**
+
 
     def get_enemy_combat_data(self, ennemi_id):
         conn = connect_db()
@@ -132,21 +170,54 @@ class CarteEnnemi(tk.Frame):
         self.enemy_img_tk = ImageTk.PhotoImage(enemy_img)
         self.canvas.create_image(CARD_WIDTH * 0.5, CARD_HEIGHT * 0.57, anchor="center", image=self.enemy_img_tk)
 
+
+    def interpolate_color(self, start_color, end_color, factor):
+        """Génère une couleur intermédiaire entre `start_color` et `end_color` en fonction du facteur (0 = start, 1 = end)."""
+        start_rgb = tuple(int(start_color[i:i+2], 16) for i in (1, 3, 5))
+        end_rgb = tuple(int(end_color[i:i+2], 16) for i in (1, 3, 5))
+        
+        new_rgb = tuple(int(start + factor * (end - start)) for start, end in zip(start_rgb, end_rgb))
+        return f'#{new_rgb[0]:02x}{new_rgb[1]:02x}{new_rgb[2]:02x}'
+
     def draw_hp_bar(self):
-        """Ajoute la barre de vie et l'icône PV."""
-        bar_x, bar_y = self.width * 0.15, self.height * 0.87  # 🔹 Décalé horizontalement
+        """Ajoute la barre de vie dynamique avec couleur variable, disparition à 0 PV et affichage de 'Mort'."""
+        
+        # 📌 Position et taille fixes de la barre
+        bar_x, bar_y = self.width * 0.15, self.height * 0.87
         bar_width, bar_height = self.width * 0.7, self.height * 0.05
 
-        # Barre de vie verte avec contour noir
-        self.canvas.create_rectangle(bar_x, bar_y, bar_x + bar_width, bar_y + bar_height, outline="black", width=1, fill="#18A86B")
+        # ✅ Ratio PV restant
+        hp_ratio = self.enemy["pv"] / self.enemy["pv_max"]
 
-        # **Icône PV déplacée horizontalement** (plus proche de la barre de vie)
-        self.icon_hp_tk = ImageTk.PhotoImage(Image.open(ICON_HP_PATH).resize((int(18 * SCALE_FACTOR), int(18 * SCALE_FACTOR)), Image.LANCZOS))
-        self.canvas.create_image(bar_x + 60, bar_y + bar_height / 2, anchor="center", image=self.icon_hp_tk)
+        # ✅ Déterminer la couleur selon le ratio
+        if self.enemy["pv"] > 0:
+            bar_color = self.interpolate_color("#18A86B", "#E11E1E", 1 - hp_ratio)  # 🔥 Dégradé dynamique
+            icon = self.icon_hp_tk  # Icône cœur normale
+            text = f"{self.enemy['pv']} / {self.enemy['pv_max']}"
+        else:
+            bar_color = None  # ❌ Pas de couleur si PV = 0
+            icon = self.icon_skull_tk  # ⚰️ Icône tête de mort
+            text = "Mort"
 
-        # Texte PV bien centré
+        # ✅ Supprime l'ancienne barre de vie pour éviter les doublons
+        self.canvas.delete("hp_bar")
+
+        # 🔹 **Dessiner uniquement la bordure (fixe)**
+        self.canvas.create_rectangle(bar_x, bar_y, bar_x + bar_width, bar_y + bar_height,
+                                    outline="black", width=2, fill="", tags="hp_bar")  # 🔳 **Bordure épaisse 2px**
+
+        # 🔹 **Si l'ennemi a des PV restants, dessiner la barre colorée**
+        if self.enemy["pv"] > 0:
+            self.canvas.create_rectangle(bar_x, bar_y, bar_x + (bar_width * hp_ratio), bar_y + bar_height,
+                                        outline="", width=0, fill=bar_color, tags="hp_bar")
+
+        # 🔹 **Icône PV ou tête de mort**
+        self.canvas.create_image(bar_x + 40, bar_y + bar_height / 2, anchor="center",
+                                image=icon, tags="hp_bar")
+
+        # 🔹 **Texte PV ou 'Mort'**
         self.canvas.create_text(bar_x + bar_width / 2, bar_y + bar_height / 2, anchor="center",
-                                text=f"{self.enemy['pv']} / {self.enemy['pv_max']}", font=("Maitree SemiBold", 12), fill="black")
+                                text=text, font=("Maitree SemiBold", 12), fill="black", tags="hp_bar")
 
 
 
@@ -160,3 +231,51 @@ class CarteEnnemi(tk.Frame):
     #         x1 + radius, y1
     #     ]
     #     return self.canvas.create_polygon(points, smooth=True, **kwargs)
+     
+    def add_hp_buttons(self):
+        """Ajoute les boutons `-` et `+` sous la carte avec une meilleure taille et alignement."""
+        
+        button_size = (200, 200)  # ✅ **Agrandir les icônes des boutons**
+        
+        self.icon_minus = load_svg_as_png(HP_DOWN_PATH, size=button_size)
+        self.icon_plus = load_svg_as_png(HP_UP_PATH, size=button_size)
+
+        # 🔘 **Bouton `-`**
+        self.btn_minus = tk.Label(self.frame_buttons, image=self.icon_minus, bg="black", cursor="hand2")
+        self.btn_minus.grid(row=0, column=0, padx=20)  # ✅ **Alignement en `grid`**
+
+        self.btn_minus.bind("<Button-1>", self.decrement_hp)
+
+        # 🔘 **Bouton `+`**
+        self.btn_plus = tk.Label(self.frame_buttons, image=self.icon_plus, bg="black", cursor="hand2")
+        self.btn_plus.grid(row=0, column=1, padx=20)  # ✅ **Alignement en `grid`**
+
+        self.btn_plus.bind("<Button-1>", self.increment_hp)
+
+    
+    def decrement_hp(self, event):
+        """Diminue les PV de l'ennemi"""
+        if self.enemy["pv"] > 0:
+            self.enemy["pv"] -= 1
+            self.modify_hp()
+
+    def increment_hp(self, event):
+        """Augmente les PV de l'ennemi"""
+        if self.enemy["pv"] < self.enemy["pv_max"]:
+            self.enemy["pv"] += 1
+            self.modify_hp()
+
+    def modify_hp(self, amount):
+        """Modifie les PV de l'ennemi en direct."""
+        new_pv = max(0, min(self.enemy["pv"] + amount, self.enemy["pv_max"]))
+        self.enemy["pv"] = new_pv  # MAJ des données locales
+
+        # **MAJ dans la BDD**
+        conn = connect_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE ennemis_combat SET pv = ? WHERE id = ?", (new_pv, self.enemy["id"]))
+        conn.commit()
+        conn.close()
+
+        # **Redessiner la barre de vie**
+        self.draw_hp_bar()
