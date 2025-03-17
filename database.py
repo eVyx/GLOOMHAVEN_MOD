@@ -40,6 +40,16 @@ def connect_db():
                 FOREIGN KEY (ennemi_source_id) REFERENCES ennemis(id) ON DELETE CASCADE
             )
         """)
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ressources_ui (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom TEXT NOT NULL,
+            texture TEXT,
+            image TEXT,
+            icon TEXT
+            )
+        """)
 
         conn.commit()
         return conn
@@ -91,3 +101,25 @@ def get_enemy_data(enemy_id):
     finally:
         cursor.close()
         conn.close()
+
+
+def get_ressource_ui(nom):
+    """
+    Récupère un enregistrement dans `ressources_ui` par le champ `nom`.
+    Retourne un dictionnaire {id, nom, texture, image, icon} ou None si introuvable.
+    """
+    conn = connect_db()  # ta fonction de connexion existante
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, nom, texture, image, icon
+        FROM ressources_ui
+        WHERE nom = ?
+    """, (nom,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    keys = ["id", "nom", "texture", "image", "icon"]
+    return dict(zip(keys, row))

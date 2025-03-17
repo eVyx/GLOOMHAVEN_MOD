@@ -5,32 +5,27 @@ from database import get_enemy_data, connect_db
 from custom_card import CarteEnnemi
 import sqlite3
 import atexit
-from database import connect_db
-import atexit
 
-# \U0001F4CC Définition des dimensions
+# Définition des dimensions
 WINDOW_WIDTH = 1600
 WINDOW_HEIGHT = 800
 CARD_SPACING = 20  # Espacement entre les cartes
+MAX_COLUMNS = 3  # Nombre max de cartes par ligne avant passage à la suivante
 
 def connect_db():
     """Connexion à la base de données"""
     return sqlite3.connect("ennemy_mod.db")
 
-
 def clear_table():
     """Vide la table 'ennemis_combat' et réinitialise l'auto-incrémentation."""
     conn = connect_db()
     cursor = conn.cursor()
-
     try:
-        cursor.execute("DELETE FROM ennemis_combat;")  # Supprime toutes les lignes
-        conn.commit()  # ✅ Valider la suppression
-
-        cursor.execute("DELETE FROM sqlite_sequence WHERE name='ennemis_combat';")  # ✅ Réinitialise l'ID
+        cursor.execute("DELETE FROM ennemis_combat;")
         conn.commit()
-
-        cursor.execute("VACUUM;")  # Optimise la base
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='ennemis_combat';")
+        conn.commit()
+        cursor.execute("VACUUM;")
         conn.commit()
         print("✅ Table 'ennemis_combat' vidée et ID réinitialisé à 1.")
     except sqlite3.OperationalError as e:
@@ -41,7 +36,6 @@ def clear_table():
 
 atexit.register(clear_table)
 
-
 class JeuGUI:
     def __init__(self, root):
         self.root = root
@@ -51,7 +45,6 @@ class JeuGUI:
 
         self.ennemis_combat = {}
         self.style = Style("darkly")
-
         self.setup_ui()
         self.charger_liste_ennemis()
 
@@ -72,12 +65,8 @@ class JeuGUI:
         self.canvas = tk.Canvas(self.battlefield_frame, bg="#2C2F33")
         self.scrollbar = ttk.Scrollbar(self.battlefield_frame, orient="vertical", command=self.canvas.yview)
         self.scrollable_frame = ttk.Frame(self.canvas, padding=10)
-
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-
+        
+        self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
@@ -108,38 +97,25 @@ class JeuGUI:
 
         conn = connect_db()
         cursor = conn.cursor()
-
         try:
-            # 🔹 Insérer l'ennemi dans `ennemis_combat`
             cursor.execute("""
                 INSERT INTO ennemis_combat (nom, mouvement, attaque, pv, pv_max, elite, image)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (selection, enemy_data["mouvement"], enemy_data["attaque"], enemy_data["pv"],
-                enemy_data["pv_max"], enemy_data["elite"], enemy_data["image"]))
-            
+            """, (selection, enemy_data["mouvement"], enemy_data["attaque"], enemy_data["pv"], enemy_data["pv_max"], enemy_data["elite"], enemy_data["image"]))
             conn.commit()
 
-            # 🔹 Récupérer l'ID généré pour cet ennemi
             enemy_id = cursor.lastrowid  
             print(f"✅ Ennemi ajouté avec ID: {enemy_id}")
 
-            # 🔹 Ajouter la carte sur l'interface en utilisant cet ID
             carte = CarteEnnemi(self.scrollable_frame, enemy_id)
-            carte.grid(row=len(self.ennemis_combat) // 4, column=len(self.ennemis_combat) % 4, padx=10, pady=10)
-            
-            self.ennemis_combat[enemy_id] = carte  # Stocker la carte pour gérer les mises à jour
+            row = len(self.ennemis_combat) // MAX_COLUMNS
+            col = len(self.ennemis_combat) % MAX_COLUMNS
+            carte.grid(row=row, column=col, padx=10, pady=10)
+
+            self.ennemis_combat[enemy_id] = carte
         finally:
             cursor.close()
             conn.close()
-
-def clear_table():
-    """Vide la table 'ennemis_combat' sans supprimer la structure."""
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM ennemis_combat;")  # Supprime toutes les lignes
-    cursor.execute("VACUUM;")  # Optimise la base après suppression
-    conn.commit()
-    conn.close()
 
 root = tk.Tk()
 app = JeuGUI(root)
